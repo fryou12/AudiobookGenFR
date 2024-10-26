@@ -1,0 +1,8 @@
+asyncio
+edge-tts
+beautifulsoup4
+PyPDF2
+pdfminer.six
+pygame
+Pillow
+tkinter
