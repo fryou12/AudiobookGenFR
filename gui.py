@@ -138,11 +138,11 @@ class EpubToAudioGUI:
         self.chapter_listbox.config(yscrollcommand=scrollbar.set)
 
     def create_action_buttons(self):
-        ttk.Button(self.main_frame, text="Convertir", command=self.start_conversion).grid(row=self.grid_row, column=1, pady=10)
-        self.stop_button = ttk.Button(self.main_frame, text="Stop", command=self.stop_conversion, state=tk.DISABLED)
+        ttk.Button(self.main_frame, text="Convertir", command=self.start_conversion).grid(
+            row=self.grid_row, column=1, pady=10)
+        self.stop_button = ttk.Button(self.main_frame, text="Stop", 
+            command=self.stop_conversion, state=tk.DISABLED)
         self.stop_button.grid(row=self.grid_row, column=2, pady=10)
-        self.second_pass_button = ttk.Button(self.main_frame, text="Seconde passe", command=self.second_pass_conversion, state=tk.DISABLED)
-        self.second_pass_button.grid(row=self.grid_row, column=0, pady=10)
         self.grid_row += 1
 
     def create_progress_and_status_widgets(self):
@@ -221,12 +221,12 @@ class EpubToAudioGUI:
 
     def start_conversion(self):
         if not self.chapitres:
-            self.status_label.config(text="Veuillez analyser un ePub avant de convertir.")
+            self.status_label.config(text="Veuillez analyser un document avant de convertir.")
             return
 
         epub_file = self.epub_path.get()
         if not epub_file:
-            self.status_label.config(text="Veuillez sélectionner un fichier ePub valide.")
+            self.status_label.config(text="Veuillez sélectionner un fichier valide.")
             return
 
         base_output_dir = self.output_path.get()
@@ -234,16 +234,34 @@ class EpubToAudioGUI:
             self.status_label.config(text="Veuillez sélectionner un dossier de sortie valide.")
             return
 
-        # Créer un sous-dossier avec le nom du fichier ePub
+        # Créer un sous-dossier avec le nom du fichier
         epub_filename = get_filename_without_extension(epub_file)
         epub_foldername = sanitize_filename(epub_filename)
         output_dir = os.path.join(base_output_dir, epub_foldername)
         
-        os.makedirs(output_dir, exist_ok=True)
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            logging.info(f"Création du dossier de sortie: {output_dir}")
+            
+            # Vérifier les permissions d'écriture
+            test_file = os.path.join(output_dir, "test.txt")
+            try:
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                os.remove(test_file)
+                logging.info("Test d'écriture dans le dossier de sortie réussi")
+            except Exception as e:
+                raise PermissionError(f"Impossible d'écrire dans le dossier de sortie: {e}")
+            
+        except Exception as e:
+            error_msg = f"Erreur lors de la création du dossier de sortie: {e}"
+            logging.error(error_msg)
+            self.status_label.config(text=error_msg)
+            return
+
         self.status_label.config(text="Conversion en cours... Veuillez patienter.")
-
-        voice_index = int(self.voice_index.get().split(' - ')[0])
-
+        voice_index = int(self.selected_voice.get().split(' - ')[0])
+        
         if not self.stop_button.cget("state") == tk.NORMAL:
             self.stop_button.config(state=tk.NORMAL)
 
@@ -268,32 +286,86 @@ class EpubToAudioGUI:
 
     async def convert_chapters(self, output_dir, voice_index):
         total_chapters = len(self.chapitres)
-        for i, chapitre in enumerate(self.chapitres, start=1):
-            if self.stop_requested:
-                break
-
-            if chapitre.content.strip():
-                chapter_name = f"chapitre_{i}.mp3"
+        padding_length = len(str(total_chapters))
+        pending_chapters = [(i, chapitre) for i, chapitre in enumerate(self.chapitres, start=1)]
+        failed_attempts = {}  # Pour suivre le nombre d'échecs par chapitre
+        
+        while pending_chapters and not self.stop_requested:
+            current_batch = pending_chapters[:]
+            pending_chapters = []
+            
+            for i, chapitre in current_batch:
+                if self.stop_requested:
+                    break
+                    
+                if not chapitre.content.strip():
+                    self.master.after(0, self.update_conversion_details, f"Chapitre {i} vide, ignoré.")
+                    continue
+                
+                chapter_number = str(i).zfill(padding_length)
+                chapter_name = f"chapitre_{chapter_number}.mp3"
                 output_file = os.path.join(output_dir, chapter_name)
                 
-                self.master.after(0, self.update_conversion_details, f"Chapitre {i}/{total_chapters} en cours de conversion...")
+                # Obtenir le nombre d'échecs précédents pour ce chapitre
+                attempts = failed_attempts.get(i, 0)
+                
+                # Calculer le temps de pause en fonction du nombre d'échecs
+                pause_time = min(30 * (2 ** attempts), 300)  # Max 5 minutes de pause
+                
+                if attempts > 0:
+                    self.master.after(0, self.update_conversion_details,
+                                    f"Tentative #{attempts+1} pour le chapitre {i} après une pause de {pause_time} secondes...")
+                    await asyncio.sleep(pause_time)
                 
                 try:
-                    await text_to_speech(chapitre.content, voice_index=voice_index, output_file=output_file, chapter_title=chapitre.title)
-                    progress = (i / total_chapters) * 100
+                    self.master.after(0, self.update_conversion_details,
+                                    f"Conversion du chapitre {i}/{total_chapters}...")
+                    
+                    await text_to_speech(chapitre.content, voice_index=voice_index,
+                                       output_file=output_file, chapter_title=chapitre.title)
+                    
+                    progress = (len([c for c in range(1, total_chapters + 1) if c not in failed_attempts]) / total_chapters) * 100
                     self.master.after(0, self.update_progress, progress)
-                    self.master.after(0, self.update_conversion_details, f"Chapitre {i}/{total_chapters} converti avec succès en tant que Chapitre {i}.")
+                    self.master.after(0, self.update_conversion_details,
+                                    f"Chapitre {i}/{total_chapters} converti avec succès en tant que {chapter_name}")
+                    
+                    # Retirer ce chapitre des échecs s'il était présent
+                    failed_attempts.pop(i, None)
+                    
+                    # Petite pause entre les chapitres réussis
+                    await asyncio.sleep(1)
+                    
                 except Exception as e:
                     error_message = f"Échec de la conversion du chapitre {i} : {str(e)}"
                     logging.error(error_message)
                     self.master.after(0, self.update_conversion_details, error_message)
-                    if "No audio was received" in str(e):
-                        self.master.after(0, self.update_conversion_details, "Erreur de quota Microsoft détectée. Veuillez changer de serveur VPN et utiliser le bouton 'Seconde passe' pour réessayer.")
-                    self.failed_chapters.append((i, chapitre, output_file))
-            else:
-                self.master.after(0, self.update_conversion_details, f"Chapitre {i} vide, ignoré. La numérotation des chapitres suivants sera ajustée.")
+                    
+                    # Incrémenter le compteur d'échecs pour ce chapitre
+                    failed_attempts[i] = attempts + 1
+                    
+                    # Remettre le chapitre dans la file d'attente
+                    pending_chapters.append((i, chapitre))
+                    
+                    self.master.after(0, self.update_conversion_details,
+                                    f"Le chapitre {i} sera réessayé plus tard (échec #{attempts+1})")
             
-            await asyncio.sleep(0.1)
+            # Si des chapitres sont toujours en échec, faire une pause plus longue
+            if pending_chapters:
+                longest_wait = max(failed_attempts.values())
+                pause_time = min(30 * (2 ** longest_wait), 300)
+                self.master.after(0, self.update_conversion_details,
+                                f"Pause de {pause_time} secondes avant de réessayer {len(pending_chapters)} chapitres...")
+                await asyncio.sleep(pause_time)
+        
+        # Rapport final
+        if failed_attempts:
+            self.master.after(0, self.update_conversion_details,
+                             f"\nConversion terminée avec {len(failed_attempts)} chapitres toujours en échec :"
+                             f"\nChapitres problématiques : {', '.join(str(i) for i in failed_attempts.keys())}"
+                             f"\nNombre de tentatives : {failed_attempts}")
+        else:
+            self.master.after(0, self.update_conversion_details,
+                             "\nTous les chapitres ont été convertis avec succès!")
 
     def stop_conversion(self):
         self.stop_requested = True
@@ -352,46 +424,6 @@ class EpubToAudioGUI:
         
         check_if_playing()
 
-    def second_pass_conversion(self):
-        if not self.failed_chapters:
-            messagebox.showinfo("Information", "Aucun chapitre n'a échoué lors de la première passe.")
-            return
-
-        self.status_label.config(text="Seconde passe en cours... Veuillez patienter.")
-        voice_index = int(self.voice_index.get().split(' - ')[0])
-        
-        self.conversion_thread = threading.Thread(target=self.run_second_pass, args=(voice_index,))
-        self.conversion_thread.start()
-
-    def run_second_pass(self, voice_index):
-        try:
-            asyncio.run(self.convert_failed_chapters(voice_index))
-        except Exception as e:
-            logging.error(f"Une erreur s'est produite pendant la seconde passe : {str(e)}")
-            self.master.after(0, lambda: self.status_label.config(text="Erreur pendant la seconde passe. Voir les détails."))
-            self.master.after(0, self.update_conversion_details, f"Erreur : {str(e)}")
-        finally:
-            self.master.after(0, self.conversion_complete)
-            self.master.after(0, lambda: self.second_pass_button.config(state=tk.DISABLED))
-
-    async def convert_failed_chapters(self, voice_index):
-        for i, chapitre, output_file in self.failed_chapters:
-            if self.stop_requested:
-                break
-            try:
-                await text_to_speech(chapitre.content, voice_index=voice_index, output_file=output_file)
-                self.master.after(0, self.update_conversion_details, f"Chapitre {i} converti avec succès lors de la seconde passe.")
-                self.failed_chapters.remove((i, chapitre, output_file))
-            except Exception as e:
-                error_message = f"Échec de la conversion du chapitre {i} lors de la seconde passe : {str(e)}"
-                logging.error(error_message)
-                self.master.after(0, self.update_conversion_details, error_message)
-
-        if not self.failed_chapters:
-            self.master.after(0, self.update_conversion_details, "Tous les chapitres ont été convertis avec succès.")
-        else:
-            self.master.after(0, self.update_conversion_details, f"{len(self.failed_chapters)} chapitres n'ont pas pu être convertis après la seconde passe.")
-
     def convert_to_pdf(self):
         epub_path = self.epub_path.get()
         if not epub_path or not epub_path.lower().endswith('.epub'):
@@ -414,6 +446,9 @@ class EpubToAudioGUI:
         else:
             self.status_label.config(text="Échec de la conversion en PDF.")
             messagebox.showerror("Erreur", "La conversion en PDF a échoué. Veuillez vérifier les logs pour plus de détails.")
+
+
+
 
 
 

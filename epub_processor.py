@@ -9,6 +9,8 @@ from pdfminer.layout import LAParams, LTTextContainer, LTTextLine, LTChar
 import re
 from collections import defaultdict, OrderedDict
 import logging
+import tempfile
+from pathlib import Path
 
 class EpubProcessor:
     class Chapter:
@@ -42,8 +44,10 @@ class EpubProcessor:
         return chapters
 
     def extract_content_from_archive(self, epub_path):
-        temp_dir = 'temp_epub'
+        # Créer un dossier temporaire unique dans le dossier temp du système
+        temp_dir = os.path.join(tempfile.gettempdir(), 'epub_temp_' + str(os.getpid()))
         os.makedirs(temp_dir, exist_ok=True)
+        
         with zipfile.ZipFile(epub_path, 'r') as zip_ref:
             zip_ref.extractall(temp_dir)
         return temp_dir
@@ -192,15 +196,18 @@ class PdfProcessor:
         return self.detect_chapters(text_content)
 
 def clean_tmp():
-    temp_dir = 'temp_epub'
-    if os.path.exists(temp_dir):
-        try:
-            shutil.rmtree(temp_dir)
-            print(f"Dossier temporaire {temp_dir} supprimé avec succès.")
-        except Exception as e:
-            print(f"Erreur lors de la suppression du dossier temporaire {temp_dir}: {e}")
-    else:
-        print(f"Le dossier temporaire {temp_dir} n'existe pas.")
+    # Nettoyer tous les dossiers temporaires créés par l'application
+    temp_base = tempfile.gettempdir()
+    patterns = ['epub_temp_*', 'audiobook_temp*']
+    
+    for pattern in patterns:
+        for temp_dir in Path(temp_base).glob(pattern):
+            try:
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+                    logging.info(f"Dossier temporaire supprimé : {temp_dir}")
+            except Exception as e:
+                logging.error(f"Erreur lors de la suppression du dossier temporaire {temp_dir}: {e}")
 
 # Assurez-vous que clean_tmp est exportée si vous utilisez __all__
 __all__ = ['EpubProcessor', 'PdfProcessor', 'clean_tmp']
