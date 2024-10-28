@@ -8,6 +8,7 @@ import tempfile
 import shutil
 import re
 import json
+from audio_quality_checker import AudioQualityChecker  # Ajout de l'import
 
 # Définition des voix supportées
 SUPPORTED_VOICES = {
@@ -75,6 +76,8 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
         rate_str = f"+{rate}%" if rate >= 0 else f"{rate}%"
         volume_str = f"+{volume}%" if volume >= 0 else f"{volume}%"
         
+        quality_checker = AudioQualityChecker()
+        
         for i, sentence in enumerate(sentences):
             if not sentence.strip():
                 logging.debug(f"Phrase {i+1} vide, ignorée")
@@ -91,23 +94,20 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
                 logging.info(f"Génération de la phrase {i+1}/{total_sentences}")
                 logging.debug(f"Contenu de la phrase : {sentence[:100]}...")  # Log des 100 premiers caractères
                 
-                communicate = edge_tts.Communicate(
-                    sentence, 
-                    main_voice,
-                    rate=rate_str,
-                    volume=volume_str
-                )
-                await communicate.save(sentence_file)
+                # Première tentative avec la voix multilingue
+                await generate_audio(sentence, main_voice, rate_str, volume_str, sentence_file)
+                
+                # Vérifier la qualité en passant le texte original
+                if not await quality_checker.check_audio_quality(sentence_file, sentence):
+                    logging.info(f"Qualité insuffisante détectée pour la phrase {i+1}, utilisation de fr-FR-HenriNeural")
+                    backup_file = os.path.join(temp_dir, f"sentence_{i:04d}_backup.mp3")
+                    await generate_audio(sentence, 'fr-FR-HenriNeural', rate_str, volume_str, backup_file)
+                    shutil.move(backup_file, sentence_file)
+                
                 progress[str(i)] = True
                 
-                # Sauvegarder la progression
-                with open(progress_file, 'w', encoding='utf-8') as f:
-                    json.dump(progress, f)
-                    
-                logging.info(f"✓ Phrase {i+1}/{total_sentences} générée avec succès")
-                
             except Exception as e:
-                error_msg = f"❌ Erreur lors de la génération de la phrase {i+1}: {e}"
+                error_msg = f"Erreur lors de la génération de la phrase {i+1}: {e}"
                 logging.error(error_msg)
                 progress[str(i)] = False
                 failed_sentences.append((i+1, sentence[:100], str(e)))  # Stocke les 100 premiers caractères
@@ -166,6 +166,12 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
         
         logging.info(f"Audio généré avec succès : {output_file}")
         
+        # À la fin de la conversion du chapitre, afficher les statistiques
+        stats = quality_checker.get_statistics()
+        if stats:
+            logging.info("Statistiques de qualité audio du chapitre:")
+            logging.info(json.dumps(stats, indent=2))
+        
     except Exception as e:
         logging.error(f"=== Échec de la conversion du chapitre {chapter_name} ===")
         logging.error(f"Erreur : {str(e)}")
@@ -195,3 +201,13 @@ async def convert_chapters(self, output_dir, voice_index=4, rate=0, volume=0):
 def run_async(coroutine):
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(coroutine)
+
+# Nouvelle fonction auxiliaire pour la génération audio
+async def generate_audio(text, voice, rate, volume, output_file):
+    communicate = edge_tts.Communicate(
+        text,
+        voice,
+        rate=rate,
+        volume=volume
+    )
+    await communicate.save(output_file)

@@ -9,12 +9,17 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
 - Conversion de fichiers ePub et PDF en fichiers audio MP3
 - Extraction automatique des chapitres
 - Choix de différentes voix en français
-- Prévisualisation du texte avant la conversion
 - Gestion robuste des erreurs avec tentatives multiples
 - Interface graphique conviviale
 - Nettoyage automatique des fichiers temporaires
 
 ## Nouveautés et Améliorations
+
+### Système de Contrôle Qualité Audio
+- Détection automatique des anomalies de prononciation avec Whisper
+- Score de qualité du français pour chaque segment audio
+- Basculement automatique vers une voix non-multilingue si nécessaire
+- Logs détaillés des performances par chapitre
 
 ### Gestion des Limitations de l'API Edge TTS
 - Découpage intelligent des phrases pour respecter les limites de l'API gratuite
@@ -39,9 +44,22 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
 
 ## Installation
 
-1. Clonez ce dépôt ou téléchargez les fichiers source.
-2. Installez les dépendances requises :
+1. Clonez ce dépôt :
+   ```bash
+   git clone https://github.com/votre-username/AudiobookGenFR.git
+   cd AudiobookGenFR
    ```
+
+2. Créez un environnement virtuel :
+   ```bash
+   python -m venv AudioBvenv
+   source AudioBvenv/bin/activate  # Linux/Mac
+   # ou
+   AudioBvenv\Scripts\activate  # Windows
+   ```
+
+3. Installez les dépendances :
+   ```bash
    pip install -r requirements.txt
    ```
 
@@ -97,13 +115,6 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
    - Basculer sur Henri pour les textes techniques
    - Tester différentes voix sur des extraits problématiques
 
-### Améliorations Futures Prévues
-- Localisation précise des phrases problématiques dans le texte
-- Interface de test des différentes voix sur des passages spécifiques
-- Possibilité de reconvertir uniquement les sections problématiques
-- Système de rapport détaillé des erreurs de conversion
-- Gestion avancée des cas particuliers de prononciation
-
 ## Dépannage
 
 ### Erreurs de Conversion
@@ -122,3 +133,20 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
 ## Licence
 
 Ce projet est sous licence MIT. Voir le fichier `LICENSE`.
+
+## Contribution
+
+Les contributions sont les bienvenues ! Voici comment participer :
+
+1. Forkez le projet
+2. Créez une branche pour votre fonctionnalité
+3. Committez vos changements
+4. Poussez vers la branche
+5. Ouvrez une Pull Request
+
+## Roadmap
+
+- [ ] Interface de configuration des seuils de qualité
+- [ ] Support de modèles Whisper plus précis
+- [ ] Optimisation des performances de détection
+- [ ] Support multilingue de l'interface

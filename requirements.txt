@@ -7,4 +7,9 @@ pygame>=2.5.0
 Pillow>=9.0.0
 lxml>=4.9.0
 pydub
-ffmpeg
+librosa
+sentence-transformers
+openai-whisper
+soundfile
+numpy
+torch
