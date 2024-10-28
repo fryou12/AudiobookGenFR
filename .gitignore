@@ -9,7 +9,7 @@ env/
 .env/
 .venv/
 ENV/
-AudioBvenv/  # Votre environnement virtuel spécifique
+AudioBvenv/  
 
 # Local development files
 laucher
