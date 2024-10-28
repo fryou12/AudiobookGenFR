@@ -10,9 +10,27 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
 - Extraction automatique des chapitres
 - Choix de différentes voix en français
 - Prévisualisation du texte avant la conversion
-- Possibilité de fusionner ou supprimer des chapitres
-- Conversion par chapitres avec gestion des erreurs
+- Gestion robuste des erreurs avec tentatives multiples
 - Interface graphique conviviale
+- Nettoyage automatique des fichiers temporaires
+
+## Nouveautés et Améliorations
+
+### Gestion des Limitations de l'API Edge TTS
+- Découpage intelligent des phrases pour respecter les limites de l'API gratuite
+- Système de retry progressif en cas d'échec (backoff exponentiel)
+- Logs détaillés des erreurs de conversion par phrase
+
+### Robustesse
+- Sauvegarde de la progression par chapitre
+- Reprise possible après interruption
+- Gestion des timeouts et des erreurs réseau
+- Nettoyage automatique des fichiers temporaires
+
+### Performance
+- Traitement optimisé des grands chapitres
+- Gestion de la mémoire améliorée
+- Temps de pause adaptatifs entre les requêtes
 
 ## Prérequis
 
@@ -29,52 +47,78 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
 
 ## Utilisation
 
-1. Lancez l'application en exécutant `main.py` :
+1. Lancez l'application :
    ```
    python main.py
    ```
-2. Sélectionnez le fichier ePub ou PDF à convertir.
-3. Choisissez le dossier de sortie pour les fichiers audio.
-4. Sélectionnez la voix souhaitée et testez-la si nécessaire.
-5. Analysez le document pour extraire les chapitres.
-6. Ajustez les chapitres si nécessaire (fusion, suppression).
-7. Lancez la conversion.
+2. Sélectionnez le fichier ePub ou PDF à convertir
+3. Choisissez le dossier de sortie
+4. Sélectionnez et testez la voix souhaitée
+5. Analysez le document
+6. Lancez la conversion
 
-## Note importante sur l'extraction des chapitres
+## Limitations Connues
 
-Si l'application rencontre des difficultés pour extraire correctement les chapitres d'un fichier ePub, vous pouvez utiliser la fonction intégrée de conversion en PDF. Les fichiers PDF sont généralement plus simples à traiter pour notre script, ce qui permet une extraction plus cohérente des chapitres.
+- L'API Edge TTS gratuite impose des limites sur la longueur des textes
+- Les très longs chapitres sont découpés en sections plus petites
+- Certaines requêtes peuvent échouer en cas de surcharge du service
+- Un VPN peut être nécessaire en cas de quota dépassé
 
-Pour convertir un ePub en PDF directement dans l'application :
-1. Chargez votre fichier ePub dans l'application
-2. Cliquez sur le bouton "Convertir en PDF"
-3. Attendez que la conversion soit terminée
-4. Un message vous indiquera l'emplacement du fichier PDF créé
+## Limitations et Artefacts Connus
 
-Une fois le fichier PDF obtenu, vous pouvez le charger dans notre application pour une meilleure extraction des chapitres.
+### Limitations de l'API Edge TTS Gratuite
+- Limite sur la longueur des textes
+- Quotas de requêtes
+- Temps de réponse variables
+- Pas de contrôle fin sur la prononciation
 
-Note : Cette fonction nécessite que Calibre soit installé sur votre système. Si vous n'avez pas Calibre, vous pouvez le télécharger et l'installer depuis [le site officiel de Calibre](https://calibre-ebook.com/download).
+### Artefacts de Synthèse Vocale
+- **Voix fr-FR-RemyMultilingualNeural (recommandée)**
+  - Meilleure qualité générale de synthèse
+  - Naturel dans l'intonation
+  - MAIS : Confusion occasionnelle de langue due à sa nature multilingue
+  - Certaines phrases peuvent être lues avec une prononciation anglaise ou autre
+  - Certains mots peuvent être mal interprétés ou incompréhensibles
 
-Alternativement, si vous préférez utiliser Calibre directement :
-1. Ouvrez Calibre
-2. Ajoutez votre fichier ePub à la bibliothèque
-3. Sélectionnez le livre et cliquez sur "Convertir les livres"
-4. Choisissez "PDF" comme format de sortie
-5. Cliquez sur "OK" pour lancer la conversion
+- **Autres Voix**
+  - fr-FR-HenriNeural : Plus stable en français mais moins naturel
+  - fr-FR-DeniseNeural : Bonne alternative pour les textes techniques
+  - fr-FR-EloiseNeural : Recommandée pour la littérature jeunesse
+  - fr-FR-VivienneMultilingualNeural : Similaire à Rémy, mêmes limitations
+
+### Recommandations pour Minimiser les Artefacts
+1. **Prétraitement du Texte**
+   - Éviter les abréviations complexes
+   - Vérifier la ponctuation
+   - Simplifier les nombres et dates
+
+2. **Choix de la Voix**
+   - Utiliser Rémy pour la littérature générale
+   - Basculer sur Henri pour les textes techniques
+   - Tester différentes voix sur des extraits problématiques
+
+### Améliorations Futures Prévues
+- Localisation précise des phrases problématiques dans le texte
+- Interface de test des différentes voix sur des passages spécifiques
+- Possibilité de reconvertir uniquement les sections problématiques
+- Système de rapport détaillé des erreurs de conversion
+- Gestion avancée des cas particuliers de prononciation
 
 ## Dépannage
 
-- Si la conversion s'arrête en cours de route, utilisez le bouton "Seconde passe" pour reprendre la conversion des chapitres qui ont échoué.
-- En cas d'erreur de quota Microsoft, changez de serveur VPN et réessayez la conversion. Nous recommandons l'utilisation de ProtonVPN, qui est gratuit et fonctionne bien pour cet usage. Voici comment procéder :
-  1. Téléchargez et installez ProtonVPN depuis leur site officiel.
-  2. Créez un compte gratuit si vous n'en avez pas déjà un.
-  3. Connectez-vous à un serveur VPN, de préférence dans un pays différent.
-  4. Relancez la conversion dans notre application.
-  5. Si l'erreur persiste, essayez de vous connecter à un autre serveur VPN et réessayez.
+### Erreurs de Conversion
+- Le système réessaiera automatiquement avec des délais croissants
+- Les logs détaillés sont disponibles pour chaque erreur
+- Utilisez un VPN en cas d'erreurs de quota persistantes
 
-## Contributions
+### Recommandations VPN
+- ProtonVPN (gratuit) est recommandé
+- Changez de serveur si les erreurs persistent
+- Attendez quelques minutes entre les tentatives
 
-Les contributions à ce projet sont les bienvenues. N'hésitez pas à ouvrir une issue ou à soumettre une pull request.
+### Fichiers Temporaires
+- Les fichiers sont automatiquement nettoyés
 
 ## Licence
 
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+Ce projet est sous licence MIT. Voir le fichier `LICENSE`.

@@ -3,6 +3,16 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
+# Virtual Environment
+venv/
+env/
+.env/
+.venv/
+ENV/
+AudioBvenv/  # Votre environnement virtuel spécifique
+
+# Local development files
+laucher
 # Node artifact files
 node_modules/
 dist/
