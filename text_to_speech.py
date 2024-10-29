@@ -8,6 +8,7 @@ import tempfile
 import shutil
 import re
 import json
+from utils import sanitize_filename  # Ajout de l'import
 from audio_quality_checker import AudioQualityChecker  # Ajout de l'import
 
 # Définition des voix supportées
@@ -19,6 +20,18 @@ SUPPORTED_VOICES = {
     5: 'fr-FR-HenriNeural'
 }
 
+def get_temp_audio_dir():
+    """Crée et retourne le chemin vers le dossier audioTemp"""
+    # Obtenir le chemin de la racine du projet
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    temp_dir = os.path.join(project_root, 'audioTemp')
+    
+    # Créer le dossier s'il n'existe pas
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+    
+    return temp_dir
+
 async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="output.mp3", chapter_title=None):
     chapter_name = os.path.basename(output_file)
     logging.info(f"=== Début de la conversion du chapitre : {chapter_name} ===")
@@ -27,14 +40,20 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
     if voice_index not in SUPPORTED_VOICES:
         raise ValueError(f"Voice index '{voice_index}' is not supported. Choose from {list(SUPPORTED_VOICES.keys())}.")
     
-    # Créer un dossier temporaire unique pour ce chapitre
-    temp_dir = os.path.join(tempfile.gettempdir(), f'audiobook_temp_{os.getpid()}_{id(text)}')
-    os.makedirs(temp_dir, exist_ok=True)
-    logging.info(f"Dossier temporaire créé : {temp_dir}")
+    # Utiliser le nouveau dossier temporaire
+    temp_dir = get_temp_audio_dir()
+    
+    # Créer un sous-dossier spécifique pour ce chapitre
+    if chapter_title:
+        chapter_temp_dir = os.path.join(temp_dir, sanitize_filename(chapter_title))
+        if not os.path.exists(chapter_temp_dir):
+            os.makedirs(chapter_temp_dir)
+    else:
+        chapter_temp_dir = temp_dir
     
     # Fichier de suivi des phrases générées
-    progress_file = os.path.join(temp_dir, "progress.json")
-    failed_sentences_file = os.path.join(temp_dir, "failed_sentences.txt")
+    progress_file = os.path.join(chapter_temp_dir, "progress.json")
+    failed_sentences_file = os.path.join(chapter_temp_dir, "failed_sentences.txt")
     
     try:
         # Diviser le texte en phrases
@@ -54,7 +73,7 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
         
         # Générer l'audio pour le titre si nécessaire
         if chapter_title:
-            title_file = os.path.join(temp_dir, "title.mp3")
+            title_file = os.path.join(chapter_temp_dir, "title.mp3")
             if not os.path.exists(title_file):
                 try:
                     communicate_title = edge_tts.Communicate(
@@ -83,7 +102,7 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
                 logging.debug(f"Phrase {i+1} vide, ignorée")
                 continue
                 
-            sentence_file = os.path.join(temp_dir, f"sentence_{i:04d}.mp3")
+            sentence_file = os.path.join(chapter_temp_dir, f"sentence_{i:04d}.mp3")
             
             # Vérifier si la phrase a déjà été générée avec succès
             if str(i) in progress and progress[str(i)] and os.path.exists(sentence_file):
@@ -98,9 +117,15 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
                 await generate_audio(sentence, main_voice, rate_str, volume_str, sentence_file)
                 
                 # Vérifier la qualité en passant le texte original
-                if not await quality_checker.check_audio_quality(sentence_file, sentence):
+                quality_result = await quality_checker.check_audio_quality(sentence_file, sentence)
+                if quality_result is None:
+                    # Le fichier audio n'a pas été généré ou erreur technique
+                    logging.info(f"Génération audio échouée pour la phrase {i+1}, nouvelle tentative nécessaire")
+                    raise Exception("Échec de la génération audio - nouvelle tentative nécessaire")
+                elif not quality_result:
+                    # L'audio existe mais est de mauvaise qualité
                     logging.info(f"Qualité insuffisante détectée pour la phrase {i+1}, utilisation de fr-FR-HenriNeural")
-                    backup_file = os.path.join(temp_dir, f"sentence_{i:04d}_backup.mp3")
+                    backup_file = os.path.join(chapter_temp_dir, f"sentence_{i:04d}_backup.mp3")
                     await generate_audio(sentence, 'fr-FR-HenriNeural', rate_str, volume_str, backup_file)
                     shutil.move(backup_file, sentence_file)
                 
@@ -142,17 +167,17 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
         
         # Créer la liste des fichiers à concaténer
         files_to_merge = []
-        if chapter_title and os.path.exists(os.path.join(temp_dir, "title.mp3")):
-            files_to_merge.append(os.path.join(temp_dir, "title.mp3"))
+        if chapter_title and os.path.exists(os.path.join(chapter_temp_dir, "title.mp3")):
+            files_to_merge.append(os.path.join(chapter_temp_dir, "title.mp3"))
             
         files_to_merge.extend([
-            os.path.join(temp_dir, f"sentence_{i:04d}.mp3")
+            os.path.join(chapter_temp_dir, f"sentence_{i:04d}.mp3")
             for i in range(total_sentences)
-            if os.path.exists(os.path.join(temp_dir, f"sentence_{i:04d}.mp3"))
+            if os.path.exists(os.path.join(chapter_temp_dir, f"sentence_{i:04d}.mp3"))
         ])
         
         # Créer le fichier de concaténation pour ffmpeg
-        concat_file = os.path.join(temp_dir, "concat.txt")
+        concat_file = os.path.join(chapter_temp_dir, "concat.txt")
         with open(concat_file, 'w', encoding='utf-8') as f:
             for audio_file in files_to_merge:
                 f.write(f"file '{audio_file}'\n")
@@ -178,14 +203,8 @@ async def text_to_speech(text, voice_index=4, rate=0, volume=0, output_file="out
         raise e
         
     finally:
-        if os.path.exists(output_file):
-            try:
-                shutil.rmtree(temp_dir)
-                logging.info(f"Dossier temporaire nettoyé : {temp_dir}")
-            except Exception as e:
-                logging.warning(f"Erreur lors du nettoyage du dossier temporaire {temp_dir}: {e}")
-        
-        logging.info(f"=== Fin de la conversion du chapitre : {chapter_name} ===\n")
+        # Ne pas supprimer le dossier temp ici, on le fera plus tard
+        pass
 
 async def convert_chapters(self, output_dir, voice_index=4, rate=0, volume=0):
     for i, chapitre in enumerate(self.chapitres, start=1):

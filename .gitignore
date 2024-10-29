@@ -14,6 +14,10 @@ AudioBvenv/
 # Local development files
 laucher
 
+# Dossiers temporaires
+audioTemp/
+logTemp/
+
 # Build files
 build/
 dist/

@@ -96,10 +96,66 @@ class EpubProcessor:
 
                 chapter.content = re.sub(r'\s+', ' ', chapter.content).strip()
 
+            # Après avoir rempli tous les chapitres, on nettoie les doublons
+            cleaned_chapters = []
+            i = 0
+            while i < len(self.chapters):
+                current = self.chapters[i]
+                
+                # Si on n'est pas au dernier chapitre
+                if i < len(self.chapters) - 1:
+                    next_chap = self.chapters[i + 1]
+                    
+                    # Logs de debug
+                    print(f"\nComparaison des chapitres:")
+                    print(f"Chapitre actuel: {current.title}")
+                    print(f"Chapitre suivant: {next_chap.title}")
+                    
+                    # Normaliser les contenus pour la comparaison
+                    current_content = re.sub(r'\s+', '', current.content)
+                    next_content = re.sub(r'\s+', '', next_chap.content)
+                    
+                    print(f"Longueur contenu actuel: {len(current_content)}")
+                    print(f"Longueur contenu suivant: {len(next_content)}")
+                    print(f"Contenus identiques: {current_content == next_content}")
+                    
+                    # Si les contenus sont identiques après normalisation
+                    if current_content == next_content:
+                        print("Contenus identiques détectés!")
+                        selected_chapter = self._select_best_chapter_title(current, next_chap)
+                        print(f"Titre sélectionné: {selected_chapter.title}")
+                        cleaned_chapters.append(selected_chapter)
+                        i += 2  # On saute le chapitre suivant
+                        continue
+                
+                cleaned_chapters.append(current)
+                i += 1
+
+            self.chapters = cleaned_chapters
+            return self.chapters
+
         finally:
             shutil.rmtree(temp_dir)
 
-        return self.chapters
+    def _select_best_chapter_title(self, chap1, chap2):
+        """Sélectionne le meilleur titre entre deux chapitres."""
+        chapter_pattern = re.compile(r'^(Chapter|Chapitre)\s+\d+\.?.*$', re.IGNORECASE)
+        
+        print(f"\nSélection du meilleur titre entre:")
+        print(f"Titre 1: {chap1.title}")
+        print(f"Titre 2: {chap2.title}")
+        print(f"Match pattern 1: {bool(chapter_pattern.match(chap1.title))}")
+        print(f"Match pattern 2: {bool(chapter_pattern.match(chap2.title))}")
+        
+        if chapter_pattern.match(chap1.title) and not chapter_pattern.match(chap2.title):
+            print("Sélection titre 1")
+            return chap1
+        elif chapter_pattern.match(chap2.title) and not chapter_pattern.match(chap1.title):
+            print("Sélection titre 2")
+            return chap2
+        
+        print("Sélection par défaut titre 1")
+        return chap1
 
 import re
 
@@ -155,41 +211,97 @@ class PdfProcessor:
 
     def detect_chapters(self, text_content):
         chapters = []
-        chapter_pattern = re.compile(r'^(Chapter|Chapitre|Part|Section|Titre)\s+\d+.*$', re.IGNORECASE)
+        chapter_pattern = re.compile(r'^(Chapter|Chapitre)\s+\d+\.?.*$', re.IGNORECASE)
         
         current_chapter = None
         chapter_content = []
+        seen_content = set()
 
-        # Define a threshold for font size to consider it as a chapter title
         if text_content:
             title_font_size_threshold = max(font_size for _, font_size in text_content) * 0.9
         else:
             title_font_size_threshold = 0
 
+        # Première passe pour collecter les chapitres
         for line, font_size in text_content:
-            if chapter_pattern.match(line) or font_size >= title_font_size_threshold:
+            is_standard_chapter = chapter_pattern.match(line)
+            is_large_font = font_size >= title_font_size_threshold
+            
+            if is_standard_chapter or is_large_font:
                 if current_chapter:
                     chapter_text = '\n'.join(chapter_content)
-                    # Appliquer le nettoyage et la mise en forme ici
                     chapter_text = clean_and_format_text(chapter_text)
                     chapters.append({'title': current_chapter, 'content': chapter_text})
                     chapter_content = []
                 current_chapter = line
             else:
-                if current_chapter:  # Only add content if we have a current chapter
+                if current_chapter:
                     chapter_content.append(line)
 
-        # Add the last chapter
-        if current_chapter:
+        # Traiter le dernier chapitre
+        if current_chapter and chapter_content:
             chapter_text = '\n'.join(chapter_content)
-            # Appliquer le nettoyage et la mise en forme ici
             chapter_text = clean_and_format_text(chapter_text)
             chapters.append({'title': current_chapter, 'content': chapter_text})
 
-        if not chapters:
-            print("Aucun chapitre détecté. Vérifiez l'expression régulière ou la structure du texte.")
+        # Deuxième passe pour nettoyer les doublons
+        cleaned_chapters = []
+        i = 0
+        while i < len(chapters):
+            current = chapters[i]
+            
+            # Si on n'est pas au dernier chapitre
+            if i < len(chapters) - 1:
+                next_chap = chapters[i + 1]
+                
+                # Ajout de logs pour debug
+                print(f"\nComparaison des chapitres:")
+                print(f"Chapitre actuel: {current['title']}")
+                print(f"Chapitre suivant: {next_chap['title']}")
+                
+                # Normaliser les contenus pour la comparaison
+                current_content = re.sub(r'\s+', '', current['content'])
+                next_content = re.sub(r'\s+', '', next_chap['content'])
+                
+                print(f"Longueur contenu actuel: {len(current_content)}")
+                print(f"Longueur contenu suivant: {len(next_content)}")
+                print(f"Contenus identiques: {current_content == next_content}")
+                
+                # Si les contenus sont identiques après normalisation
+                if current_content == next_content:
+                    print("Contenus identiques détectés!")
+                    selected_chapter = self._select_best_title(current, next_chap)
+                    print(f"Titre sélectionné: {selected_chapter['title']}")
+                    cleaned_chapters.append(selected_chapter)
+                    i += 2
+                    continue
+            
+            cleaned_chapters.append(current)
+            i += 1
         
-        return chapters
+        return cleaned_chapters
+
+    def _select_best_title(self, chap1, chap2):
+        """Sélectionne le meilleur titre entre deux chapitres."""
+        # Privilégier le format "Chapitre X"
+        chapter_pattern = re.compile(r'^(Chapter|Chapitre)\s+\d+\.?.*$', re.IGNORECASE)
+        
+        # Ajout de logs pour debug
+        print(f"\nSélection du meilleur titre entre:")
+        print(f"Titre 1: {chap1['title']}")
+        print(f"Titre 2: {chap2['title']}")
+        print(f"Match pattern 1: {bool(chapter_pattern.match(chap1['title']))}")
+        print(f"Match pattern 2: {bool(chapter_pattern.match(chap2['title']))}")
+        
+        if chapter_pattern.match(chap1['title']) and not chapter_pattern.match(chap2['title']):
+            print("Sélection titre 1")
+            return chap1
+        elif chapter_pattern.match(chap2['title']) and not chapter_pattern.match(chap1['title']):
+            print("Sélection titre 2")
+            return chap2
+        
+        print("Sélection par défaut titre 1")
+        return chap1
 
     def analyze_pdf(self, pdf_path):
         text_content = self.extract_text_and_fonts_from_pdf(pdf_path)

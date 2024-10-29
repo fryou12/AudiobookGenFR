@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 import subprocess
 import shutil
+import logging
 
 def resource_path(relative_path):
     """
@@ -121,3 +122,31 @@ def convert_epub_to_pdf(epub_path, output_dir):
     except Exception as e:
         print(f"Une erreur inattendue s'est produite : {e}")
         return None
+
+def clean_audio_temp():
+    """Nettoie le dossier audioTemp"""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    temp_dir = os.path.join(project_root, 'audioTemp')
+    
+    if os.path.exists(temp_dir):
+        try:
+            shutil.rmtree(temp_dir)
+            logging.info(f"Dossier temporaire nettoyé : {temp_dir}")
+        except Exception as e:
+            logging.error(f"Erreur lors du nettoyage du dossier temporaire {temp_dir}: {e}")
+
+def clean_temp_folders():
+    """Nettoie les dossiers temporaires (audio et logs)"""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Liste des dossiers temporaires à nettoyer
+    temp_folders = ['audioTemp', 'logTemp']
+    
+    for folder in temp_folders:
+        folder_path = os.path.join(project_root, folder)
+        if os.path.exists(folder_path):
+            try:
+                shutil.rmtree(folder_path)
+                logging.info(f"Dossier temporaire nettoyé : {folder_path}")
+            except Exception as e:
+                logging.error(f"Erreur lors du nettoyage du dossier temporaire {folder_path}: {e}")

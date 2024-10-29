@@ -13,7 +13,8 @@ import logging
 from epub_processor import EpubProcessor, PdfProcessor, clean_tmp
 from text_to_speech import text_to_speech, SUPPORTED_VOICES
 import pygame
-from utils import get_filename_without_extension, sanitize_filename, convert_epub_to_pdf
+from utils import get_filename_without_extension, sanitize_filename, convert_epub_to_pdf, clean_audio_temp, clean_temp_folders
+import edge_tts
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,6 +35,7 @@ class EpubToAudioGUI:
         self.stop_requested = False
         self.grid_row = 0
         self.failed_chapters = []  # Pour stocker les chapitres qui ont échoué
+        self.preview_button = None  # Ajout de cette ligne
 
         # Création des widgets
         self.create_widgets()
@@ -132,17 +134,50 @@ class EpubToAudioGUI:
 
         self.chapter_listbox = tk.Listbox(self.chapter_frame, height=10, width=50)
         self.chapter_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Ajouter le gestionnaire d'événements
+        self.chapter_listbox.bind('<<ListboxSelect>>', self.on_chapter_select)
 
         scrollbar = ttk.Scrollbar(self.chapter_frame, orient=tk.VERTICAL, command=self.chapter_listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.chapter_listbox.config(yscrollcommand=scrollbar.set)
 
+    def on_chapter_select(self, event):
+        if self.chapter_listbox.curselection():
+            self.preview_button.config(state=tk.NORMAL)
+        else:
+            self.preview_button.config(state=tk.DISABLED)
+
     def create_action_buttons(self):
-        ttk.Button(self.main_frame, text="Convertir", command=self.start_conversion).grid(
-            row=self.grid_row, column=1, pady=10)
-        self.stop_button = ttk.Button(self.main_frame, text="Stop", 
-            command=self.stop_conversion, state=tk.DISABLED)
-        self.stop_button.grid(row=self.grid_row, column=2, pady=10)
+        # Création d'un frame pour contenir tous les boutons
+        button_frame = ttk.Frame(self.main_frame)
+        button_frame.grid(row=self.grid_row, column=0, columnspan=3, pady=10)
+
+        # Bouton Prévisualiser
+        self.preview_button = ttk.Button(
+            button_frame, 
+            text="Prévisualiser", 
+            command=self.preview_chapter,
+            state=tk.DISABLED
+        )
+        self.preview_button.pack(side=tk.LEFT, padx=5)
+
+        # Bouton Convertir
+        ttk.Button(
+            button_frame, 
+            text="Convertir", 
+            command=self.start_conversion
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Bouton Stop
+        self.stop_button = ttk.Button(
+            button_frame, 
+            text="Stop", 
+            command=self.stop_conversion, 
+            state=tk.DISABLED
+        )
+        self.stop_button.pack(side=tk.LEFT, padx=5)
+
         self.grid_row += 1
 
     def create_progress_and_status_widgets(self):
@@ -207,7 +242,9 @@ class EpubToAudioGUI:
         total_words = 0
         if self.chapitres is None or len(self.chapitres) == 0:
             self.chapter_listbox.insert(tk.END, "Aucun chapitre trouvé ou chapitres non initialisés")
+            self.preview_button.config(state=tk.DISABLED)
             return
+
         for i, chapitre in enumerate(self.chapitres, 1):
             title = chapitre.title if hasattr(chapitre, 'title') else f"Chapitre {i}"
             content = chapitre.content if hasattr(chapitre, 'content') else ""
@@ -215,8 +252,9 @@ class EpubToAudioGUI:
             total_words += word_count
             self.chapter_listbox.insert(tk.END, f"{title}: {word_count} mots")
         
-        # Supprimez ces lignes pour ne pas ajouter le chapitre "Total"
-        # self.chapter_listbox.insert(tk.END, f"Total: {total_words} mots")
+        # Activer le bouton de prévisualisation
+        self.preview_button.config(state=tk.NORMAL)
+        
         logging.info(f"Affichage des détails des chapitres : {len(self.chapitres)} chapitres, {total_words} mots au total")
 
     def start_conversion(self):
@@ -371,9 +409,10 @@ class EpubToAudioGUI:
         self.stop_requested = True
         self.status_label.config(text="Arrêt de la conversion...")
         self.stop_button.config(state=tk.DISABLED)
-        epub_file = self.epub_path.get()
-        if epub_file:
-            clean_tmp(epub_file)
+        
+        # Nettoyer les fichiers temporaires
+        clean_temp_folders()
+        
         self.status_label.config(text="Conversion arrêtée et fichiers temporaires nettoyés.")
 
     def conversion_complete(self):
@@ -402,9 +441,22 @@ class EpubToAudioGUI:
         
         self.status_label.config(text="Génération de l'échantillon vocal...")
         
+        async def generate_test_audio():
+            try:
+                # Utiliser directement edge_tts sans passer par text_to_speech
+                communicate = edge_tts.Communicate(
+                    test_text,
+                    voice_name
+                )
+                await communicate.save(output_file)
+                self.master.after(0, self.play_test_audio, output_file)
+                self.master.after(0, lambda: self.status_label.config(text="Test vocal généré avec succès."))
+            except Exception as e:
+                self.master.after(0, lambda: self.status_label.config(text=f"Erreur lors du test: {str(e)}"))
+                logging.error(f"Erreur lors du test vocal: {str(e)}")
+        
         def run_test():
-            asyncio.run(text_to_speech(test_text, voice_index=voice_index, output_file=output_file))
-            self.master.after(0, self.play_test_audio, output_file)
+            asyncio.run(generate_test_audio())
         
         threading.Thread(target=run_test).start()
 
@@ -447,38 +499,35 @@ class EpubToAudioGUI:
             self.status_label.config(text="Échec de la conversion en PDF.")
             messagebox.showerror("Erreur", "La conversion en PDF a échoué. Veuillez vérifier les logs pour plus de détails.")
 
+    def preview_chapter(self):
+        selection = self.chapter_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("Attention", "Veuillez sélectionner un chapitre à prévisualiser")
+            return
 
+        index = selection[0]
+        if index >= len(self.chapitres):
+            messagebox.showerror("Erreur", "Chapitre invalide")
+            return
 
+        chapitre = self.chapitres[index]
+        preview_text = chapitre.content[:500] + "..." if len(chapitre.content) > 500 else chapitre.content
+        
+        # Créer une fenêtre de prévisualisation
+        preview_window = tk.Toplevel(self.master)
+        preview_window.title(f"Prévisualisation - {chapitre.title}")
+        preview_window.geometry("600x400")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        # Zone de texte avec scrollbar
+        text_widget = scrolledtext.ScrolledText(
+            preview_window, 
+            wrap=tk.WORD, 
+            padx=10, 
+            pady=10,
+            font=("Arial", 11)
+        )
+        text_widget.pack(expand=True, fill='both', padx=10, pady=10)
+        text_widget.insert(tk.END, preview_text)
+        text_widget.config(state='disabled')
 
 

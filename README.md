@@ -40,7 +40,7 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
 ## Prérequis
 
 - Python 3.7 ou supérieur
-- Bibliothèques Python : tkinter, edge-tts, beautifulsoup4, PyPDF2, pdfminer.six, pygame
+- FFmpeg installé sur le système
 
 ## Installation
 
@@ -58,8 +58,12 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
    AudioBvenv\Scripts\activate  # Windows
    ```
 
-3. Installez les dépendances :
+3. Installez les dépendances (ordre spécifique requis) :
    ```bash
+   # Nettoyage préalable si nécessaire
+   pip uninstall keras tensorflow tf-keras -y
+   
+   # Installation des dépendances
    pip install -r requirements.txt
    ```
 
@@ -116,6 +120,11 @@ Cette application permet de convertir des fichiers ePub et PDF en livres audio. 
    - Tester différentes voix sur des extraits problématiques
 
 ## Dépannage
+
+### Erreurs d'Installation
+- En cas d'erreur avec Keras/TensorFlow, suivez l'ordre d'installation spécifié
+- Assurez-vous que FFmpeg est installé sur votre système
+- Vérifiez la compatibilité Python (3.7+ recommandé)
 
 ### Erreurs de Conversion
 - Le système réessaiera automatiquement avec des délais croissants
